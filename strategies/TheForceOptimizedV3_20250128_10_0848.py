@@ -1,0 +1,84 @@
+import talib.abstract as ta
+import freqtrade.vendor.qtpylib.indicators as qtpylib
+from freqtrade.strategy import IStrategy
+from pandas import DataFrame
+
+class TheForceOptimizedV3(IStrategy):
+    INTERFACE_VERSION = 2
+
+    minimal_roi = {
+        "0": 0.02,
+        "15": 0.01,
+        "30": 0.005
+    }
+
+    stoploss = -0.10  # Stoploss fixo de 10%
+    trailing_stop = True
+    trailing_stop_positive = 0.01
+    trailing_stop_positive_offset = 0.015
+
+    timeframe = '15m'
+
+    # Aumentado para garantir cálculos corretos dos indicadores
+    startup_candle_count: int = 50
+
+    def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+        """
+        Calcula os indicadores técnicos usados na estratégia.
+        """
+        # Cálculo do Stochastic Fast
+        stoch_fast = ta.STOCHF(dataframe, fastk_period=5, slowk_period=3, slowd_period=3)
+        dataframe['fastd'] = stoch_fast['slowd']  # Correção no nome do campo
+        dataframe['fastk'] = stoch_fast['slowk']
+
+        # Cálculo do MACD
+        macd = ta.MACD(dataframe['close'], fastperiod=12, slowperiod=26, signalperiod=9)
+        dataframe['macd'] = macd['macd']
+        dataframe['macdsignal'] = macd['macdsignal']
+        dataframe['macdhist'] = macd['macdhist']
+
+        # Cálculo das EMAs
+        dataframe['ema5c'] = ta.EMA(dataframe['close'], timeperiod=5)
+        dataframe['ema50'] = ta.EMA(dataframe['close'], timeperiod=50)
+
+        # Cálculo do RSI
+        dataframe['rsi'] = ta.RSI(dataframe['close'], timeperiod=14)
+
+        # Cálculo do ATR
+        dataframe['atr'] = ta.ATR(dataframe, timeperiod=14)
+
+        # Volume Médio
+        dataframe['volume_mean'] = dataframe['volume'].rolling(window=20).mean()
+
+        return dataframe
+
+    def populate_buy_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+        """
+        Define as condições de compra.
+        """
+        dataframe.loc[
+            (
+                (dataframe['fastk'] > 20) & (dataframe['fastk'] < 80) &  # Stochastic em zona neutra
+                (dataframe['fastd'] > 20) & (dataframe['fastd'] < 80) &
+                (dataframe['macd'] > dataframe['macdsignal']) &  # MACD em alta
+                (dataframe['ema5c'] > dataframe['ema50']) &  # Confirmação de tendência
+                (dataframe['rsi'] > 40) & (dataframe['rsi'] < 70) &  # RSI em zona neutra
+                (dataframe['volume'] > dataframe['volume_mean'])  # Volume acima da média
+            ),
+            'buy'] = 1
+        return dataframe
+
+    def populate_sell_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+        """
+        Define as condições de venda.
+        """
+        dataframe.loc[
+            (
+                (dataframe['fastk'] < 80) &
+                (dataframe['fastd'] < 80) &
+                (dataframe['macd'] < dataframe['macdsignal']) &  # MACD em baixa
+                (dataframe['ema5c'] < dataframe['ema50']) &  # Reversão de tendência
+                (dataframe['rsi'] < 40)  # RSI indicando perda de força
+            ),
+            'sell'] = 1
+        return dataframe

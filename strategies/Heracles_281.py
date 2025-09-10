@@ -1,0 +1,125 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import logging
+
+from numpy.lib import math
+from freqtrade.strategy.interface import IStrategy
+from pandas import DataFrame
+
+
+
+import pandas as pd
+import ta
+from ta.utils import dropna
+import freqtrade.vendor.qtpylib.indicators as qtpylib
+from functools import reduce
+import numpy as np
+
+
+class Heracles_281(IStrategy):
+
+
+
+
+
+    buy_params = {
+        'buy-cross-0': 'volatility_kcw',
+        'buy-indicator-0': 'volatility_dcp',
+        'buy-oper-0': '<',
+    }
+
+    sell_params = {
+        'sell-cross-0': 'trend_macd_signal',
+        'sell-indicator-0': 'trend_ema_fast',
+        'sell-oper-0': '=',
+    }
+
+    minimal_roi = {
+        "0": 0.149,
+        "183": 0.109,
+        "582": 0.072,
+        "2017": 0
+    }
+
+    stoploss = -0.346
+
+    trailing_stop = True
+    trailing_stop_positive = 0.022
+    trailing_stop_positive_offset = 0.071
+    trailing_only_offset_is_reached = False
+
+    timeframe = '12h'
+
+    def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+
+        dataframe = dropna(dataframe)
+
+        dataframe['volatility_kcw'] = ta.volatility.keltner_channel_wband(
+            dataframe['high'],
+            dataframe['low'],
+            dataframe['close'],
+            window=20,
+            window_atr=10,
+            fillna=False,
+            original_version=True
+        )
+        dataframe['volatility_dcp'] = ta.volatility.donchian_channel_pband(
+            dataframe['high'],
+            dataframe['low'],
+            dataframe['close'],
+            window=10,
+            offset=0,
+            fillna=False
+        )
+        dataframe['trend_macd_signal'] = ta.trend.macd_signal(
+            dataframe['close'],
+            window_slow=26,
+            window_fast=12,
+            window_sign=9,
+            fillna=False
+        )
+
+        dataframe['trend_ema_fast'] = ta.trend.EMAIndicator(
+            close=dataframe['close'], window=12, fillna=False
+        ).ema_indicator()
+
+        return dataframe
+
+    def populate_buy_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+
+        IND = self.buy_params['buy-indicator-0']
+        CRS = self.buy_params['buy-cross-0']
+        DFIND = dataframe[IND]
+        DFCRS = dataframe[CRS]
+
+        dataframe.loc[
+            (DFIND < DFCRS),
+            'buy'] = 1
+
+        return dataframe
+
+    def populate_sell_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+        IND = self.sell_params['sell-indicator-0']
+        CRS = self.sell_params['sell-cross-0']
+
+        DFIND = dataframe[IND]
+        DFCRS = dataframe[CRS]
+
+        dataframe.loc[
+            (qtpylib.crossed_below(DFIND, DFCRS)),
+            'sell'] = 1
+
+        return dataframe

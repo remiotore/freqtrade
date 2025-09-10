@@ -1,0 +1,106 @@
+
+from freqtrade.strategy.interface import IStrategy
+from typing import Dict, List
+from functools import reduce
+from pandas import DataFrame
+
+
+import talib.abstract as ta
+import freqtrade.vendor.qtpylib.indicators as qtpylib
+from freqtrade.strategy import DecimalParameter
+from typing import Dict, List
+from functools import reduce
+from pandas import DataFrame, DatetimeIndex, merge
+
+
+import talib.abstract as ta
+import freqtrade.vendor.qtpylib.indicators as qtpylib
+
+
+class Low_BBHO2(IStrategy):
+    """
+    author@: Thorsten
+    works on new objectify branch!
+    idea:
+        buy after crossing .98 * lower_bb and sell if trailing stop loss is hit
+    """
+
+
+    minimal_roi = {
+        "0": 0.087,
+        "7": 0.034,
+        "9": 0.011,
+        "22": 0
+    }
+
+    buy_params = {
+        "buy_limit": 0.943,
+    }
+
+
+    stoploss = -0.263
+
+    timeframe = '5m'
+
+    buy_limit = DecimalParameter(0.90, 0.98, default=0.98, space='buy', decimals=3, optimize=True, load=True)
+    
+
+    def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+
+
+
+        bollinger = qtpylib.bollinger_bands(
+            qtpylib.typical_price(dataframe), window=20, stds=2
+        )
+        dataframe['bb_lowerband'] = bollinger['lower']
+        dataframe['bb_middleband'] = bollinger['mid']
+        dataframe['bb_upperband'] = bollinger['upper']
+
+        macd = ta.MACD(dataframe)
+        dataframe['macd'] = macd['macd']
+        dataframe['macdsignal'] = macd['macdsignal']
+        dataframe['macdhist'] = macd['macdhist']
+
+
+
+
+
+
+
+
+
+
+        bollinger = qtpylib.bollinger_bands(dataframe['close'], window=20, stds=2)
+        dataframe['bb_lowerband'] = bollinger['lower']
+        dataframe['bb_upperband'] = bollinger['upper']
+        dataframe['bb_middleband'] = bollinger['mid']
+
+        return dataframe
+
+    def populate_buy_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+        """
+        Based on TA indicators, populates the buy signal for the given dataframe
+        :param dataframe: DataFrame
+        :return: DataFrame with buy column
+        """
+        dataframe.loc[
+            (
+
+                (dataframe['close'] <= self.buy_limit.value * dataframe['bb_lowerband'])
+
+            )
+            ,
+            'buy'] = 1
+
+        return dataframe
+
+    def populate_sell_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+        """
+        Based on TA indicators, populates the sell signal for the given dataframe
+        :param dataframe: DataFrame
+        :return: DataFrame with buy column
+        """
+        dataframe.loc[
+            (),
+            'sell'] = 1
+        return dataframe
